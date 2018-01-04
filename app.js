@@ -14,7 +14,7 @@ var Bot = function(coin) {
 
   this.quotes = [];
 
-  this.delayMs = 1000 * 30;
+  this.delay = 1000 * 30;
 
   this.targetSpread = 0.80;
 };
@@ -42,11 +42,11 @@ Bot.prototype.enterPositions = async function() {
         return;
       }
 
-      var positionExists = self.positions.find(function(position) {
+      var positionIndex = self.positions.findIndex(function(position) {
         return position.exchangeLong.name === exchangeLong.name && position.exhangeShort.name === exchangeShort.name;
       });
 
-      if (positionExists) {
+      if (positionIndex !== -1) {
         return;
       }
 
@@ -73,13 +73,14 @@ Bot.prototype.enterPositions = async function() {
         exchangeShort: exchangeShort,
         longQuote: longQuote,
         shortQuote: shortQuote,
-        fees: fees
+        fees: fees,
+        positionIndex: positionIndex
       });
     });
   });
 
   await Promise.each(positionsToEnter, async function(positionToEnter) {
-    positions.push(await enterPosition(positionToEnter));
+    self.positions.push(await enterPosition(positionToEnter));
   });
 };
 
@@ -94,11 +95,11 @@ Bot.prototype.exitPositions = async function() {
         return;
       }
 
-      var positionExists = self.positions.find(function(position) {
+      var positionIndex = self.positions.findIndex(function(position) {
         return position.exchangeLong.name === exchangeLong.name && position.exhangeShort.name === exchangeShort.name;
       });
 
-      if (!positionExists) {
+      if (positionIndex === -1) {
         return;
       }
 
@@ -126,19 +127,16 @@ Bot.prototype.exitPositions = async function() {
         coin: coin,
         longQuote: longQuote,
         shortQuote: shortQuote,
-        fees: fees
+        fees: fees,
+        positionIndex: positionIndex
       });
     });
   });
 
   await Promise.each(positionsToExit, async function(positionToExit) {
-    var positionIndex = positions.findIndex(function(position) {
-      return position.exchangeLong.name === positionToExit.exchangeLong.name && position.exhangeShort.name === positionToExit.exchangeShort.name;
-    });
-
     await enterPosition(positionToExit);
 
-    positions.splice(positionIndex, 1);
+    self.positions.splice(positionToExit.positionIndex, 1);
   });
 };
 
@@ -152,7 +150,7 @@ Bot.prototype.run = async function() {
 
   setTimeout(function() {
     self.run();
-  }, self.delayMs);
+  }, self.delay);
 };
 
 (async function() {
