@@ -1,13 +1,14 @@
 var Promise = require('bluebird');
 
+var coins = require('./lib/coins.js');
+var exchanges = require('./lib/exhanges.js');
+
 var getQuote = require('./lib/getQuote.js');
 var enterPosition = require('./lib/enterPosition.js');
 var exitPosition = require('./lib/exitPosition.js');
 
-var Bot = function() {
-  this.exchanges = require('./lib/exhanges.js');
-
-  this.coins = require('./lib/coins.js');
+var Bot = function(coin) {
+  this.coin = coin;
 
   this.positions = [];
 
@@ -23,10 +24,8 @@ Bot.prototype.getQuotes = async function() {
 
   var quotes = [];
 
-  await Promise.each(self.exchanges, async function(exchange) {
-    await Promise.each(self.coins, async function(coin) {
-      quotes.push(await getQuote(exchange, coin));
-    });
+  await Promise.each(exchanges, async function(exchange) {
+    quotes.push(await getQuote(exchange, self.coin));
   });
 
   return quotes;
@@ -37,47 +36,44 @@ Bot.prototype.enterPositions = async function() {
 
   var positionsToEnter = [];
 
-  self.exchanges.forEach(function(exchangeLong) {
-    self.exchanges.forEach(function(exhangeShort) {
-      if (exchangeLong === exhangeShort) {
+  exchanges.forEach(function(exchangeLong) {
+    exchanges.forEach(function(exhangeShort) {
+      if (exchangeLong.name === exhangeShort.name) {
         return;
       }
 
-      self.coins.forEach(function(coin) {
-        var positionExists = self.positions.find(function(position) {
-          return position.exchangeLong === exchangeLong && position.exhangeShort === exchangeShort && position.coin === coin;
-        });
+      var positionExists = self.positions.find(function(position) {
+        return position.exchangeLong.name === exchangeLong.name && position.exhangeShort.name === exchangeShort.name;
+      });
 
-        if (positionExists) {
-          return;
-        }
+      if (positionExists) {
+        return;
+      }
 
-        var longQuote = self.quotes.find(function(quote) {
-          return quote.coin === coin && quote.exchange === exchangeLong;
-        });
+      var longQuote = self.quotes.find(function(quote) {
+        return quote.exchange.name === exchangeLong.name;
+      });
 
-        var shortQuote = self.quotes.find(function(quote) {
-          return quote.coin === coin && quote.exchange === exhangeShort;
-        });
+      var shortQuote = self.quotes.find(function(quote) {
+        return quote.exchange.name === exhangeShort.name;
+      });
 
-        var priceLong = longQuote.ask;
-        var priceShort = shortQuote.bid;
-        var spread = (priceShort - priceLong) / priceLong;
+      var priceLong = longQuote.ask;
+      var priceShort = shortQuote.bid;
+      var spread = (priceShort - priceLong) / priceLong;
 
-        if (spread < self.targetSpread) {
-          return;
-        }
+      if (spread < self.targetSpread) {
+        return;
+      }
 
-        var fees = longQuote.fees + shortQuote.fees;
+      var fees = exchangeLong.longFees + exhangeShort.shortFees;
 
-        positionToEnter.push({
-          exchangeLong: exchangeLong,
-          exchangeShort: exchangeShort,
-          coin: coin,
-          longQuote: longQuote,
-          shortQuote: shortQuote,
-          fees: fees
-        });
+      positionToEnter.push({
+        exchangeLong: exchangeLong,
+        exchangeShort: exchangeShort,
+        longQuote: longQuote,
+        shortQuote: shortQuote,
+        fees: fees
       });
     });
   });
@@ -92,54 +88,52 @@ Bot.prototype.exitPositions = async function() {
 
   var positionsToExit = [];
 
-  self.exchanges.forEach(function(exchangeLong) {
-    self.exchanges.forEach(function(exhangeShort) {
-      if (exchangeLong === exhangeShort) {
+  exchanges.forEach(function(exchangeLong) {
+    exchanges.forEach(function(exhangeShort) {
+      if (exchangeLong.name === exhangeShort.name) {
         return;
       }
 
-      self.coins.forEach(function(coin) {
-        var positionExists = self.positions.find(function(position) {
-          return position.exchangeLong === exchangeLong && position.exhangeShort === exchangeShort && position.coin === coin;
-        });
+      var positionExists = self.positions.find(function(position) {
+        return position.exchangeLong.name === exchangeLong.name && position.exhangeShort.name === exchangeShort.name;
+      });
 
-        if (positionExists) {
-          return;
-        }
+      if (!positionExists) {
+        return;
+      }
 
-        var longQuote = self.quotes.find(function(quote) {
-          return quote.coin === coin && quote.exchange === exchangeLong;
-        });
+      var longQuote = self.quotes.find(function(quote) {
+        return quote.exchange.name === exchangeLong.name;
+      });
 
-        var shortQuote = self.quotes.find(function(quote) {
-          return quote.coin === coin && quote.exchange === exhangeShort;
-        });
+      var shortQuote = self.quotes.find(function(quote) {
+        return quote.exchange.name === exhangeShort.name;
+      });
 
-        var priceLong = longQuote.bid;
-        var priceShort = shortQuote.ask;
-        var spread = (priceShort - priceLong) / priceLong;
+      var priceLong = longQuote.bid;
+      var priceShort = shortQuote.ask;
+      var spread = (priceShort - priceLong) / priceLong;
 
-        if (spread < self.targetSpread) {
-          return;
-        }
+      if (spread < self.targetSpread) {
+        return;
+      }
 
-        var fees = longQuote.fees + shortQuote.fees;
+      var fees = exchangeLong.longFees + exhangeShort.shortFees;
 
-        positionsToExit.push({
-          exchangeLong: exchangeLong,
-          exchangeShort: exchangeShort,
-          coin: coin,
-          longQuote: longQuote,
-          shortQuote: shortQuote,
-          fees: fees
-        });
+      positionsToExit.push({
+        exchangeLong: exchangeLong,
+        exchangeShort: exchangeShort,
+        coin: coin,
+        longQuote: longQuote,
+        shortQuote: shortQuote,
+        fees: fees
       });
     });
   });
 
   await Promise.each(positionsToExit, async function(positionToExit) {
     var positionIndex = positions.findIndex(function(position) {
-      return position.exchangeLong === positionToExit.exchangeLong && position.exhangeShort === positionToExit.exchangeShort && position.coin === positionToExit.coin;
+      return position.exchangeLong.name === positionToExit.exchangeLong.name && position.exhangeShort.name === positionToExit.exchangeShort.name;
     });
 
     await enterPosition(positionToExit);
@@ -162,7 +156,11 @@ Bot.prototype.run = async function() {
 };
 
 (async function() {
-  var bot = new Bot();
+  var bots = {};
 
-  bot.run();
+  coins.forEach(function(coin) {
+    bots[coin] = new Bot(coin);
+
+    bots[coin].run();
+  });
 })();
